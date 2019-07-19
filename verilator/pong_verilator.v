@@ -53,7 +53,8 @@ module pong_verilator;
    reg [9:0]  playerinput/*verilator public_flat*/;
  
   //ay38500NTSC chip(rpOut,lpOut,ballOut,manServe,rpDWN,PIN_19,ballAngle,lpDWN,PIN_18,batSize,ballSpeed,vsync,audio,clk,0,rifle1DWN,rifle1,rifle2,1,tennisDWN,tennis,sfOut,soccer,squash,practice,~reset);
-  ay38500NTSC chip(rpOut,lpOut,ballOut,0,rpDWN,PIN_19,1,lpDWN,PIN_18,1,1,sync,audio,clk,0,rifle1DWN,1,1,1,tennisDWN,0,sfOut,1,0,0,~reset,vsync,hsync);
+  // working? //ay38500NTSC chip(rpOut,lpOut,ballOut,0,rpDWN,PIN_19,1,lpDWN,PIN_18,1,1,sync,audio,clk,0,rifle1DWN,1,1,1,tennisDWN,0,sfOut,1,0,0,~reset,vsync,hsync);
+  ay38500NTSC chip(rpOut,lpOut,ballOut,0,rpDWN,PIN_19,1,lpDWN,PIN_18,1,1,sync,audio,clk,0,rifle1DWN,1,1,1,tennisDWN,1,sfOut,1,0,1,~reset,vsync,hsync);
  
 `ifdef SDL_DISPLAY
    import "DPI-C" function void dpi_vga_init(input integer h,
