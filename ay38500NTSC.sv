@@ -13,18 +13,14 @@ module emu
 	input         RESET,
 
 	//Must be passed to hps_io module
-	inout  [45:0] HPS_BUS,
+	inout  [44:0] HPS_BUS,
 
 	//Base video clock. Usually equals to CLK_SYS.
-	output        CLK_VIDEO,
+	output        VGA_CLK,
 
-	//Multiple resolutions are supported using different CE_PIXEL rates.
+	//Multiple resolutions are supported using different VGA_CE rates.
 	//Must be based on CLK_VIDEO
-	output        CE_PIXEL,
-
-	//Video aspect ratio for HDMI. Most retro systems have ratio 4:3.
-	output  [7:0] VIDEO_ARX,
-	output  [7:0] VIDEO_ARY,
+	output        VGA_CE,
 
 	output  [7:0] VGA_R,
 	output  [7:0] VGA_G,
@@ -32,8 +28,25 @@ module emu
 	output        VGA_HS,
 	output        VGA_VS,
 	output        VGA_DE,    // = ~(VBlank | HBlank)
-	output        VGA_F1,
-	output [1:0]  VGA_SL,
+
+	//Base video clock. Usually equals to CLK_SYS.
+	output        HDMI_CLK,
+
+	//Multiple resolutions are supported using different HDMI_CE rates.
+	//Must be based on CLK_VIDEO
+	output        HDMI_CE,
+
+	output  [7:0] HDMI_R,
+	output  [7:0] HDMI_G,
+	output  [7:0] HDMI_B,
+	output        HDMI_HS,
+	output        HDMI_VS,
+	output        HDMI_DE,   // = ~(VBlank | HBlank)
+	output  [1:0] HDMI_SL,   // scanlines fx
+
+	//Video aspect ratio for HDMI. Most retro systems have ratio 4:3.
+	output  [7:0] HDMI_ARX,
+	output  [7:0] HDMI_ARY,
 
 	output        LED_USER,  // 1 - ON, 0 - OFF.
 
@@ -45,427 +58,256 @@ module emu
 
 	output [15:0] AUDIO_L,
 	output [15:0] AUDIO_R,
-	output        AUDIO_S, // 1 - signed audio samples, 0 - unsigned
-	output  [1:0] AUDIO_MIX, // 0 - no mix, 1 - 25%, 2 - 50%, 3 - 100% (mono)
-
-	//ADC
-	inout   [3:0] ADC_BUS,
-
-	// SD-SPI
-	output        SD_SCK,
-	output        SD_MOSI,
-	input         SD_MISO,
-	output        SD_CS,
-	input         SD_CD,
-
-	//High latency DDR3 RAM interface
-	//Use for non-critical time purposes
-	output        DDRAM_CLK,
-	input         DDRAM_BUSY,
-	output  [7:0] DDRAM_BURSTCNT,
-	output [28:0] DDRAM_ADDR,
-	input  [63:0] DDRAM_DOUT,
-	input         DDRAM_DOUT_READY,
-	output        DDRAM_RD,
-	output [63:0] DDRAM_DIN,
-	output  [7:0] DDRAM_BE,
-	output        DDRAM_WE,
-
-	//SDRAM interface with lower latency
-	output        SDRAM_CLK,
-	output        SDRAM_CKE,
-	output [12:0] SDRAM_A,
-	output  [1:0] SDRAM_BA,
-	inout  [15:0] SDRAM_DQ,
-	output        SDRAM_DQML,
-	output        SDRAM_DQMH,
-	output        SDRAM_nCS,
-	output        SDRAM_nCAS,
-	output        SDRAM_nRAS,
-	output        SDRAM_nWE,
-
-	input         UART_CTS,
-	output        UART_RTS,
-	input         UART_RXD,
-	output        UART_TXD,
-	output        UART_DTR,
-	input         UART_DSR,
-
-	// Open-drain User port.
-	// 0 - D+/RX
-	// 1 - D-/TX
-	// 2..5 - USR1..USR4
-	// Set USER_OUT to 1 to read from USER_IN.
-	input   [5:0] USER_IN,
-	output  [5:0] USER_OUT,
-
-	input         OSD_STATUS
+	output        AUDIO_S    // 1 - signed audio samples, 0 - unsigned
 );
-
-assign ADC_BUS  = 'Z;
-assign USER_OUT = '1;
-
-assign {UART_RTS, UART_TXD, UART_DTR} = 0;
-
-assign AUDIO_S   = 1;
-assign AUDIO_MIX = 0;
 
 assign LED_USER  = ioctl_download;
 assign LED_DISK  = 0;
 assign LED_POWER = 0;
 
-assign VIDEO_ARX = status[8] ? 8'd16 : 8'd3;
-assign VIDEO_ARY = status[8] ? 8'd9 : 8'd2;
+assign HDMI_ARX = status[1] ? 8'd16 : 8'd4;
+assign HDMI_ARY = status[1] ? 8'd9  : 8'd3;
 
-assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CKE, SDRAM_CLK, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
-assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = 0;
-assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
-
-assign VGA_F1 = 0;
 
 `include "build_id.v"
 parameter CONF_STR = {
-	"GBA;;",
+	"APF_TV_fun;;",
 	"-;",
-	"F,GBABIN;",
+	"O23,Game		,Tennis,Soccer,Squash,Practice;",
+//	"O13,Game		,Hidden,Tennis,Soccer,Squash,Practice,gameRifle1,gameRifle2;",
+	"O4,Serve		,Auto,Manual;",
+	"O5,Ball Angle	,20deg,40deg;", //check
+	"O6,Bat Size	,Small,Big;",	//check
+	"O7,Ball Speed	,Fast,Slow;",
+	"-;",
+	"T8,Start;",
 	"-;",
 	"O8,Aspect ratio,3:2,16:9;",
 	"O9B,Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
 	"R0,Reset;",
-	"J,A,B,Select,Start,L,R;",
-	"V,v0.10.",`BUILD_DATE
+	"J,Button,Select,Start;",
+	"V,v",`BUILD_DATE
 };
 
-wire        ioctl_download;
-wire        ioctl_wr;
-wire [24:0] ioctl_addr;
-wire [15:0] ioctl_data;
-wire  [7:0] ioctl_index;
-reg         ioctl_wait;
 
-wire [15:0] joystick_0;
-wire [15:0] joystick_1;
+////////////////////   CLOCKS   ///////////////////
 
-wire [1:0] buttons;
-
-wire [31:0] status;
-
-wire arm_reset = status[0];
-
-wire forced_scandoubler;
-wire ps2_kbd_clk, ps2_kbd_data;
-wire [10:0] ps2_key;
-
-reg  [31:0] sd_lba = 0;
-
-reg         sd_rd = 0;
-reg         sd_wr = 0;
-wire        sd_ack;
-wire  [8:0] sd_buff_addr;
-wire  [7:0] sd_buff_dout;
-wire  [7:0] sd_buff_din;
-wire        sd_buff_wr;
-wire        img_mounted;
-wire        img_readonly;
-wire [63:0] img_size;
-
-hps_io #(.STRLEN($size(CONF_STR)>>3), .WIDE(1)) hps_io
-(
-	.clk_sys(clk_16m),
-	.HPS_BUS(HPS_BUS),
-	.conf_str(CONF_STR),
-
-	.buttons(buttons),
-	.forced_scandoubler(forced_scandoubler),
-
-	.joystick_0(joystick_0),
-	.joystick_1(joystick_1),
-
-	.status(status),
-
-	.ioctl_download(ioctl_download),
-	.ioctl_index(ioctl_index),
-	.ioctl_wr(ioctl_wr),
-	.ioctl_addr(ioctl_addr),
-	.ioctl_dout(ioctl_data),
-	.ioctl_wait(ioctl_wait),
-
-	.sd_lba(sd_lba),
-	.sd_rd(sd_rd),
-	.sd_wr(sd_wr),
-	.sd_ack(sd_ack),
-	.sd_buff_addr(sd_buff_addr),
-	.sd_buff_dout(sd_buff_dout),
-	.sd_buff_din(sd_buff_din),
-	.sd_buff_wr(sd_buff_wr),
-	.img_mounted(img_mounted),
-	.img_readonly(img_readonly),
-	.img_size(img_size),
-
-	.ps2_key(ps2_key),
-
-	.ps2_kbd_led_use(0),
-	.ps2_kbd_led_status(0)
-);
-
-wire bios_download = ioctl_download && (ioctl_index == 8'd0);
-wire cart_download = ioctl_download && (ioctl_index != 8'd0);
-
-wire clock_locked;
-wire clk_sys;
-wire clk_16m;
-
+wire clk_16, clk_2;
+wire pll_locked;
 
 pll pll
 (
 	.refclk(CLK_50M),
 	.rst(0),
-	.outclk_0(clk_sys),
-	.outclk_1(clk_ram),
-	.outclk_2(clk_16m),
-
-	.locked(clock_locked)
+	.outclk_0(clk_16),	
+	.outclk_1(clk_2),	
+	.locked(pll_locked)
 );
 
-wire clk_ram;
 
-assign SDRAM_CLK = clk_ram;
+///////////////////////////////////////////////////
 
-// reset after download
-reg [7:0] download_reset_cnt;
-wire download_reset = download_reset_cnt != 0;
-always @(posedge CLK_50M) begin
-	if(ioctl_download) download_reset_cnt <= 8'd255;
-	else if(download_reset_cnt != 0) download_reset_cnt <= download_reset_cnt - 8'd1;
-end
+wire [31:0] status;
+wire  [1:0] buttons;
+wire        forced_scandoubler;
 
-// hold machine in reset until first download starts
-reg init_reset;
-always @(posedge CLK_50M) begin
-	if(!clock_locked) init_reset <= 1'b1;
-	else if(ioctl_download) init_reset <= 1'b0;
-end
+wire        ioctl_download;
+wire        ioctl_wr;
+wire [24:0] ioctl_addr;
+wire  [7:0] ioctl_dout;
 
+wire [10:0] ps2_key;
 
-wire  [8:0] cycle;
-wire  [8:0] scanline;
-wire [15:0] sample;
-wire  [5:0] color;
-wire        joypad_strobe;
-wire  [1:0] joypad_clock;
-wire [21:0] memory_addr;
-wire        memory_read_cpu, memory_read_ppu;
+wire [15:0] joy_0, joy_1;
+wire [15:0] joy = joy_0 | joy_1;
 
-wire  [7:0] memory_din_cpu, memory_din_ppu;
-reg   [7:0] joypad_bits, joypad_bits2;
-reg   [1:0] last_joypad_clock;
-
-reg led_blink;
-always @(posedge clk_16m) begin
-	int cnt = 0;
-	cnt <= cnt + 1;
-	if(cnt == 10000000) begin
-		cnt <= 0;
-		led_blink <= ~led_blink;
-	end;
-end
-
-wire [7:0] SW = 8'b00000000;
-wire JA1;
-wire JA2;
-wire JA3;
-wire [7:0] LD;
-
-wire AC_ADR0;
-wire AC_ADR1;
-wire AC_GPIO0;
-wire AC_GPIO1;
-wire AC_GPIO2;
-wire AC_GPIO3;
-wire AC_MCLK;
-wire AC_SCK;
-wire AC_SDA;
-
-wire [4:0] GBA_R;
-wire [4:0] GBA_G;
-wire [4:0] GBA_B;
-wire GBA_HS;
-wire GBA_VS;
-wire GBA_DE;
-wire GBA_HBLANK;
-wire GBA_VBLANK;
-
-wire [23:0] output_wave_l;
-wire [23:0] output_wave_r;
-
-assign AUDIO_L = output_wave_l[23:8];
-assign AUDIO_R = output_wave_r[23:8];
-
-// GBA button mapping...
-//
-// gba_buttons[0] = // A
-// gba_buttons[1] = // B
-// gba_buttons[2] = // Select
-// gba_buttons[3] = // Start
-// gba_buttons[4] = // Right
-// gba_buttons[5] = // Left
-// gba_buttons[6] = // Down
-// gba_buttons[7] = // Up
-// gba_buttons[8] = // R
-// gba_buttons[9] = // L
-// gba_buttons[15:10] = 6'h3F; // (set these 6 bits HIGH).
-//
-wire [15:0] gba_buttons = {
-	6'b111111,
-	joystick_0[8],
-	joystick_0[9],
-	joystick_0[3],
-	joystick_0[2],
-	joystick_0[1],
-	joystick_0[0],
-	joystick_0[7],
-	joystick_0[6],
-	joystick_0[5],
-	joystick_0[4]
-};
-
-wire        clk_cpu;
-wire [31:0] bus_addr;
-wire [1:0]  bus_size;
-
-wire reset_gba = init_reset || buttons[1] || arm_reset || download_reset;
-
-gba_top gba_top_inst
+hps_io #(.STRLEN($size(CONF_STR)>>3)) hps_io
 (
-	.gba_clk       (clk_16m),   // 16.776 MHz.
+	.clk_sys(clk_16),
+	.HPS_BUS(HPS_BUS),
 
-	.vga_clk       (CLK_50M),   // 50.33 MHz.
+	.conf_str(CONF_STR),
 
-	.BTND          (reset_gba), // input BTND (active HIGH for Reset).
+	.buttons(buttons),
+	.status(status),
+	.forced_scandoubler(forced_scandoubler),
 
-	.SW            (SW),
+	.ioctl_download(ioctl_download),
+	.ioctl_wr(ioctl_wr),
+	.ioctl_addr(ioctl_addr),
+	.ioctl_dout(ioctl_dout),
 
-	.JA1           (JA1),
-	.JA2           (JA2),
-	.JA3           (JA3),
-
-	.LD            (LD),
-
-	.VGA_R         (GBA_R),
-	.VGA_G         (GBA_G),
-	.VGA_B         (GBA_B),
-	.VGA_VS        (GBA_VS),
-	.VGA_HS        (GBA_HS),
-	.VGA_DE        (GBA_DE),
-
-	.AC_ADR0       (AC_ADR0),
-	.AC_ADR1       (AC_ADR1),
-	.AC_GPIO0      (AC_GPIO0),
-	.AC_MCLK       (AC_MCLK),
-	.AC_SCK        (AC_SCK),
-	.AC_GPIO1      (AC_GPIO1),
-	.AC_GPIO2      (AC_GPIO2),
-	.AC_GPIO3      (AC_GPIO3),
-	.AC_SDA        (AC_SDA),
-
-	.output_wave_l (output_wave_l),
-	.output_wave_r (output_wave_r),
-
-	.hblank        (GBA_HBLANK),
-	.vblank        (GBA_VBLANK),
-
-	.buttons       (gba_buttons),
-
-	.ext_bus_addr  (bus_addr[31:0]),
-	.cart_data     (cart_data),
-	.bios_data     (bios_data),
-	.cart_rd       (cart_rd),
-	.bios_rd       (bios_rd),
-	.cart_bus_size (bus_size),
-	.cpu_clk_o     (clk_cpu),
-	.cpu_pause     (0)
+	.joystick_0(joy_0),
+	.joystick_1(joy_1),
+	.ps2_key(ps2_key)
 );
 
+wire       pressed = ps2_key[9];
+wire [8:0] code    = ps2_key[8:0];
+always @(posedge clk_16) begin
+	reg old_state;
+	old_state <= ps2_key[10];
+	
+	if(old_state != ps2_key[10]) begin
+		casex(code)
+			'h03a: btn_fire         <= pressed; // M
+			'h005: btn_one_player   <= pressed; // F1
+			'h006: btn_two_players  <= pressed; // F2
+			'h01C: btn_left      	<= pressed; // A
+			'h023: btn_right      	<= pressed; // D
+			'h004: btn_coin  			<= pressed; // F3
+			'h04b: btn_thrust  			<= pressed; // L
+			'h042: btn_shield  			<= pressed; // K
+//			'hX75: btn_up          <= pressed; // up
+//			'hX72: btn_down        <= pressed; // down
+			'hX6B: btn_left        <= pressed; // left
+			'hX74: btn_right       <= pressed; // right
+			'h014: btn_fire        <= pressed; // ctrl
+			'h011: btn_thrust      <= pressed; // Lalt
+			'h029: btn_shield      <= pressed; // space
+			// JPAC/IPAC/MAME Style Codes
+			'h016: btn_start_1     <= pressed; // 1
+			'h01E: btn_two_players <= pressed; // 2
+			'h02E: btn_coin        <= pressed; // 5
+			'h036: btn_coin        <= pressed; // 6
+			
+		endcase
+	end
+end
 
-(* keep=1 *) wire [31:0] cart_data_2;
+reg btn_right = 0;
+reg btn_left = 0;
+reg btn_one_player = 0;
+reg btn_two_players = 0;
+reg btn_fire = 0;
+reg btn_coin = 0;
+reg btn_thrust = 0;
+reg btn_shield = 0;
+reg btn_start_1=0;
 
-(*keep=1*) wire cart_rd;
+wire [7:0] BUTTONS = {~btn_right & ~joy[0],~btn_left & ~joy[1],~(btn_one_player|btn_start_1) & ~joy[7],~btn_two_players,~btn_fire & ~joy[4],~btn_coin & ~joy[7],~btn_thrust & ~joy[5],~btn_shield & ~joy[6]};
+wire hblank, vblank;
+/*
+wire hs, vs;
+wire [2:0] r,g;
+wire [2:0] b;
 
-wire [31:0] bios_data;
-wire bios_rd;
+reg ce_pix;
+always @(posedge clk_24) begin
+        reg old_clk;
 
-dpram_dif #(
-	.addr_width_a(13),
-	.data_width_a(32),
-	.addr_width_b(14),
-	.data_width_b(16)
-) bios (
-	.clock(clk_16m),
+        old_clk <= clk_6;
+        ce_pix <= old_clk & ~clk_6;
+end
 
-	.address_a(bus_addr[13:2]),
-	.q_a(bios_data),
-
-	.address_b(ioctl_addr[13:1]),
-	.data_b(ioctl_data),
-	.wren_b(ioctl_wr & bios_download)
-);
-
-dpram_dif #(
-	.addr_width_a(14),
-	.data_width_a(32),
-	.addr_width_b(15),
-	.data_width_b(16)
-) cart (
-	.clock(clk_16m),
-
-	.address_a(bus_addr[14:2]),
-	.q_a(cart_data),
-
-	.address_b(ioctl_addr[14:1]),
-	.data_b(ioctl_data),
-	.wren_b(ioctl_wr & cart_download)
-);
-
-
-reg [31:0] cart_data;
-
-wire [4:0] R = GBA_R;
-wire [4:0] G = GBA_G;
-wire [4:0] B = GBA_B;
-
-assign CLK_VIDEO = clk_sys;
-assign VGA_SL = sl[1:0];
-
-wire [2:0] scale = status[11:9];
-wire [2:0] sl = scale ? scale - 1'd1 : 3'd0;
-
-video_mixer #(.LINE_LENGTH(520)) video_mixer
+arcade_fx #(640,9) arcade_video
 (
-	.clk_sys(CLK_VIDEO),
-	.ce_pix(clk_16m),
-	.ce_pix_out(CE_PIXEL),
+        .*,
 
-	.scanlines(1'b0),
-	.scandoubler(scale || forced_scandoubler),
-	.hq2x(scale==1),
-	.mono(1'b0),
+        .clk_video(clk_24),
 
-	.R({R,R[2:0]}),
-	.G({G,G[2:0]}),
-	.B({B,B[2:0]}),
+        .RGB_in({r,g,b}),
+        .HBlank(hblank),
+        .VBlank(vblank),
+        .HSync(~hs),
+        .VSync(~vs),
 
-	.HSync(GBA_HS),
-	.VSync(GBA_VS),
-	.HBlank(GBA_HBLANK),
-	.VBlank(GBA_VBLANK),
-
-	.VGA_R(VGA_R),
-	.VGA_G(VGA_G),
-	.VGA_B(VGA_B),
-	.VGA_VS(VGA_VS),
-	.VGA_HS(VGA_HS),
-	.VGA_DE(VGA_DE)
+        .fx(status[5:3])
 );
+*/
+wire ce_vid = 1; 
+wire hs, vs;
+wire [2:0] r,g;
+wire [2:0] b;
+
+assign VGA_CLK  = clk_16; 
+assign VGA_CE   = ce_vid;
+assign VGA_R    = {vid,vid,vid,vid,vid,vid,vid,vid};
+assign VGA_G    = {vid,vid,vid,vid,vid,vid,vid,vid};
+assign VGA_B    = {vid,vid,vid,vid,vid,vid,vid,vid};
+assign VGA_HS   = hs;
+assign VGA_VS   = vs;
+assign VGA_DE   = 1'b1;  // AJS - fix this
+
+assign HDMI_CLK = VGA_CLK;
+assign HDMI_CE  = VGA_CE;
+assign HDMI_R   = VGA_R ;
+assign HDMI_G   = VGA_G ;
+assign HDMI_B   = VGA_B ;
+assign HDMI_DE  = VGA_DE;
+assign HDMI_HS  = VGA_HS;
+assign HDMI_VS  = VGA_VS;
+//assign HDMI_SL  = status[2] ? 2'd0   : status[4:3];
+assign HDMI_SL  = 2'd0;
+
+
+
+wire 			vid_play, vid_RP, vid_LP, vid_Ball;
+wire 			vid = vid_play | vid_RP | vid_LP | vid_Ball;
+wire			gameTennis;
+wire			gameSoccer;
+wire			gameSquash;
+wire			gamePractice;
+wire			gameRifle1;
+wire			gameRifle2;
+wire 			m_left, m_right;
+wire 			LPin, RPin, Rifle1, Rifle2;
+
+wire			audio;
+
+assign AUDIO_L=AUDIO_R=audio;
+
+always @(*) begin
+ case (status[3:2])
+// 3'b001  : begin gameTennis <= 0; gameSoccer <= 1; gameSquash <= 1; gamePractice <= 1; gameRifle1 <= 1; gameRifle2 <= 1; end
+//	3'b010  : begin gameTennis <= 1; gameSoccer <= 0; gameSquash <= 1; gamePractice <= 1; gameRifle1 <= 1; gameRifle2 <= 1;  end
+// 3'b011  : begin gameTennis <= 1; gameSoccer <= 1; gameSquash <= 0; gamePractice <= 1; gameRifle1 <= 1; gameRifle2 <= 1;  end
+//	3'b100  : begin gameTennis <= 1; gameSoccer <= 1; gameSquash <= 1; gamePractice <= 0; gameRifle1 <= 1; gameRifle2 <= 1;  end	
+//	3'b101  : begin gameTennis <= 1; gameSoccer <= 1; gameSquash <= 1; gamePractice <= 1; gameRifle1 <= 0; gameRifle2 <= 1;  end
+//	3'b111  : begin gameTennis <= 1; gameSoccer <= 1; gameSquash <= 1; gamePractice <= 1; gameRifle1 <= 1; gameRifle2 <= 0;  end	
+//	default : begin gameTennis <= 1; gameSoccer <= 1; gameSquash <= 1; gamePractice <= 1; gameRifle1 <= 1; gameRifle2 <= 1;  end
+	
+	2'b01  : begin gameTennis <= 1; gameSoccer <= 0; gameSquash <= 1; gamePractice <= 1; gameRifle1 <= 1; gameRifle2 <= 1;  end
+   2'b10  : begin gameTennis <= 1; gameSoccer <= 1; gameSquash <= 0; gamePractice <= 1; gameRifle1 <= 1; gameRifle2 <= 1;  end
+	2'b11  : begin gameTennis <= 1; gameSoccer <= 1; gameSquash <= 1; gamePractice <= 0; gameRifle1 <= 1; gameRifle2 <= 1;  end
+	default : begin gameTennis <= 0; gameSoccer <= 1; gameSquash <= 1; gamePractice <= 1; gameRifle1 <= 1; gameRifle2 <= 1;  end
+ endcase
+end
+
+ay38500NTSC ay38500NTSC(
+	.clk(clk_2),
+	.reset(~(buttons[1] | status[0] | status[9])),
+	.pinSound(audio),
+	//Video
+	.pinBallOut(vid_Ball),
+	.pinRPout(vid_RP),
+	.pinLPout(vid_LP),
+	.pinSFout(vid_play),
+	.vsync(vs),
+   .hsync(hs),
+	//Menu Items
+	.pinManualServe(status[4] | joy_0[4] | joy_1[4]),
+	.pinBallAngle(status[5]),
+	.pinBatSize(status[6]),
+	.pinBallSpeed(status[7]),
+	//Game Select
+	.pinRifle1(1'b1),//							?
+	.pinRifle2(1'b1),//							?
+	.pinTennis(gameTennis),
+	.pinSoccer(gameSoccer),
+	.pinSquash(gameSquash),
+	.pinPractice(gamePractice),	
+	
+	.pinShotIn(1'b1),//							todo
+	.pinHitIn(1'b0),//							todo
+	.pinRifle1_DWN(Rifle1),//					?
+	.pinTennis_DWN(Rifle2),//					?
+	.pinRPin_DWN(RPin),
+	.pinLPin_DWN(LPin),
+	.pinRPin(m_right),//							todo
+	.pinLPin(m_left)//							todo
+	);
+
 
 endmodule
