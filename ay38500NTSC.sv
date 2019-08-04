@@ -186,7 +186,6 @@ reg btn_thrust = 0;
 reg btn_shield = 0;
 reg btn_start_1=0;
 
-wire [7:0] BUTTONS = {~btn_right & ~joy[0],~btn_left & ~joy[1],~(btn_one_player|btn_start_1) & ~joy[7],~btn_two_players,~btn_fire & ~joy[4],~btn_coin & ~joy[7],~btn_thrust & ~joy[5],~btn_shield & ~joy[6]};
 wire hblank, vblank;
 /*
 wire hs, vs;
@@ -256,7 +255,9 @@ wire 			LPin, RPin, Rifle1, Rifle2;
 
 wire			audio;
 
-assign AUDIO_L=AUDIO_R=audio;
+assign AUDIO_L={audio,audio,6'b0};
+assign AUDIO_R=AUDIO_L;
+assign AUDIO_S = 0;
 
 always @(*) begin
  case (status[3:2])
@@ -277,7 +278,7 @@ end
 
 ay38500NTSC ay38500NTSC(
 	.clk(clk_2),
-	.reset(~(buttons[1] | status[0] | status[9])),
+	.reset(~(RESET | buttons[1] | status[0])),
 	.pinSound(audio),
 	//Video
 	.pinBallOut(vid_Ball),
